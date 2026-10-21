@@ -6,15 +6,84 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            autoconf \
+            libtool \
+            pkg-config \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libtinfo5 \
+            cmake \
+            libffi-dev \
+            libssl-dev \
+            openjdk-17-jdk \
+            automake \
+            libxslt-dev \
+            libxml2-dev \
+            libssl-dev \
+            libbz2-dev \
+            libreadline-dev \
+            libsqlite3-dev \
+            libgmp-dev
+
+      - name: Install Buildozer
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython
+
+      - name: Download Android SDK and NDK
+        run: |
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477346_latest.zip
+          unzip commandlinetools-linux-9477346_latest.zip
+          sudo mv cmdline-tools /usr/local/lib/android-sdk
+          sudo mkdir -p /usr/local/lib/android-sdk/cmdline-tools/latest
+          sudo mv /usr/local/lib/android-sdk/cmdline-tools/* /usr/local/lib/android-sdk/cmdline-tools/latest/
+          export ANDROID_HOME=/usr/local/lib/android-sdk
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_ENV
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+          wget https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip android-ndk-r25c-linux.zip
+          sudo mv android-ndk-r25c /usr/local/lib/android-ndk
+          export ANDROID_NDK_HOME=/usr/local/lib/android-ndk
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+
       - name: Build with Buildozer
         id: buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        with:
-          command: buildozer android debug
-          buildozer_version: stable
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android-sdk
+          export ANDROID_NDK_HOME=/usr/local/lib/android-ndk
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+          buildozer android debug
+          APK_PATH=$(find bin -name "*.apk" | head -n 1)
+          echo "filename=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "APK built at: $APK_PATH"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -22,3 +91,4 @@ jobs:
           name: synthbot-apk
           path: ${{ steps.buildozer.outputs.filename }}
           retention-days: 30
+          if-no-files-found: error
